@@ -13,8 +13,7 @@ import System.Process
 
 data Config =
   Config
-    { confOutputFile :: FilePath
-    , confCabalFile :: FilePath
+    { confExecFile :: FilePath
     , confWorking :: Bool
     } deriving (Show,Read)
 
@@ -22,17 +21,16 @@ data Config =
 main = do
   args <- getArgs
   let dir = head args
-  let cabalOutput = args !! 1
+  let execFile = args !! 1
   putStrLn $ "Watching directory: " ++ dir
-  putStrLn $ "Cabal output file: " ++ cabalOutput
-  contents <- getDirectoryContents dir
-  let contents' = filter filterCabal contents
-  case contents' of
-    (x:_) -> do
-      let config = Config cabalOutput x False
+  putStrLn $ "Exec file: " ++ execFile
+  fileExists <- doesFileExist execFile
+  if fileExists
+    then do
+      let config = Config execFile False
       runThread config dir
-    [] -> do
-      putStrLn "No cabal file found!"
+    else do
+      putStrLn $ "Exec file does not exist!"
       putStrLn "Exiting"
 
 
@@ -65,7 +63,6 @@ handleFilteredFile conf evt fp =
 
 
 filterHS fp = fileExt fp == "hs"
-filterCabal fp = fileExt fp == "cabal"
 
 
 fileExt = reverse
@@ -89,31 +86,19 @@ doWork conf = do
 
 runCI :: TVar Config -> IO ()
 runCI conf = do
-  runCIChain conf
   config <- readTVarIO conf
+  contents <- readFile $ confExecFile config
+  execContents $ lines contents
   atomically $ writeTVar conf (config { confWorking = False })
   return ()
 
 
-runCIChain :: TVar Config -> IO ()
-runCIChain conf = do
-  cabalBuild <- runCabal conf ["build"]
-  print $ "*** cabal build result: " ++ show cabalBuild
-  case cabalBuild of
-    False -> return ()
-    True -> do
-      cabalTest <- runCabal conf ["test"]
-      print $ "*** cabal test result: " ++ show cabalTest
-
-
-runCabal :: TVar Config -> [String] -> IO Bool
-runCabal conf args = do
-  (code, out, err) <- readProcessWithExitCode "cabal" args ""
-  config <- readTVarIO conf
-  let outputFile = confOutputFile config
-  _ <- when (out /= []) $ appendFile outputFile out
-  _ <- when (err /= []) $ appendFile outputFile err
-  case code of
-    ExitSuccess -> return True
+execContents :: [String] -> IO Bool
+execContents [] = return True
+execContents (x:xs) = do
+  let p = shell x
+  (_,_,_,h) <- createProcess p
+  exitCode <- waitForProcess h
+  case exitCode of
+    ExitSuccess -> execContents xs
     ExitFailure _ -> return False
-
