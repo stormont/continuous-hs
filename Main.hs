@@ -3,6 +3,7 @@ import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TVar
 import Control.Monad
+import System.Console.GetOpt
 import System.Directory
 import System.Environment (getArgs)
 import System.Exit
@@ -18,20 +19,72 @@ data Config =
     } deriving (Show,Read)
 
 
+-- Options
+data Options =
+   Options
+      { optUsage    :: Bool
+      , optExecFile :: FilePath
+      , optWatchDir :: FilePath
+      } deriving (Show)
+
+
+options :: [OptDescr (Options -> IO Options)]
+options =
+   [ Option "?" ["help"]     (NoArg  runUsage)               "Show usage/help"
+   , Option "f" ["execfile"] (ReqArg setExecFile "execfile") "The file to read execution commands from"
+   , Option "d" ["watchdir"] (ReqArg setWatchDir "watchdir") "The directory to observe for changes"
+   ]
+
+
+defaultOptions = Options { optUsage    = False
+                         , optExecFile = []
+                         , optWatchDir = []
+                         }
+
+
+runUsage      opt = return opt { optUsage    = True }
+setExecFile x opt = return opt { optExecFile = x }
+setWatchDir x opt = return opt { optWatchDir = x }
+
+
+showUsage :: IO ()
+showUsage = do
+   let header = "Usage: continuous-hs [OPTIONS...]"
+   putStrLn $ usageInfo header options
+   exitFailure
+
+
+main :: IO ()
 main = do
-  args <- getArgs
-  let dir = head args
-  let execFile = args !! 1
-  putStrLn $ "Watching directory: " ++ dir
+   args <- getArgs
+   let (actions, nonOpts, msgs) = getOpt RequireOrder options args
+   opts <- foldl (>>=) (return defaultOptions) $ reverse actions
+   if optUsage opts || optExecFile opts == [] || optWatchDir opts == []
+      then showUsage
+      else runWorker opts
+-- /OPTIONS
+
+
+runWorker
+   :: Options
+   -> IO ()
+runWorker opts = do
+  let dir = optWatchDir opts
+  let execFile = optExecFile opts
   putStrLn $ "Exec file: " ++ execFile
+  putStrLn $ "Watching directory: " ++ dir
   fileExists <- doesFileExist execFile
-  if fileExists
-    then do
-      let config = Config execFile False
-      runThread config dir
-    else do
+  when (not fileExists) $ do
       putStrLn $ "Exec file does not exist!"
       putStrLn "Exiting"
+      exitFailure
+  dirExists <- doesDirectoryExist dir
+  when (not dirExists) $ do
+      putStrLn $ "Watch directory does not exist!"
+      putStrLn "Exiting"
+      exitFailure
+  let config = Config execFile False
+  runThread config dir
 
 
 runThread config dir = do
