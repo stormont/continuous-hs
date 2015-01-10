@@ -90,7 +90,6 @@ runWorker opts = do
 runThread config dir = do
   config <- newTVarIO config
   n <- initINotify
-  putStrLn $ "Monitoring: " ++ dir
   putStrLn "Press <Enter> to exit"
   putStrLn n
   wd <- addWatch n
