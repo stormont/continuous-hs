@@ -90,13 +90,14 @@ runWorker opts = do
 runThread config dir = do
   config <- newTVarIO config
   n <- initINotify
+  putStrLn $ "Monitoring: " ++ dir
   putStrLn "Press <Enter> to exit"
-  print n
+  putStrLn n
   wd <- addWatch n
                  [ Modify, CloseWrite, Create, Delete, MoveIn, MoveOut ]
                  dir
                  (eventHandler config)
-  print wd
+  putStrLn wd
   getLine
   removeWatch wd
   killINotify n
@@ -112,7 +113,7 @@ eventHandler _ _ = return ()
 
 
 handleFilteredFile conf evt fp =
-  when (filterHS fp) $ print evt >> doWork conf
+  when (filterHS fp) $ putStrLn evt >> doWork conf
 
 
 filterHS fp = fileExt fp == "hs"
@@ -128,10 +129,10 @@ doWork conf = do
   config <- readTVarIO conf
   if confWorking config
     then do
-      print "Already working!"
+      putStrLn "Already working!"
       return ()
     else do
-      print "New work available!"
+      putStrLn "New work available!"
       atomically $ writeTVar conf (config { confWorking = True })
       _ <- forkIO $ runCI conf
       return ()
